@@ -14,9 +14,6 @@ MODULE_AUTHOR("Richard Zimmerman");
 MODULE_DESCRIPTION("a Sensus meter reading Kernel Module");
 MODULE_VERSION("0.1");
 
-#define CLKPIN 0
-#define DATPIN 2
-
 static int dataPin[4]={-1,-1,-1,-1};
 static int dataPin_argc = 0;
 module_param_array(dataPin, int, &dataPin_argc, S_IRUGO);

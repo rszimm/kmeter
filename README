@@ -7,23 +7,26 @@ In order to work, the meter must be a typical 3 wire absolute encoder model.
 
 Water Meter Pinout
 ------------------
-most Sensus compatible meters (including the elster/AMCO meter) there are 3 wires (or three labeled terminals):
+most Sensus compatible meters (including the elster/AMCO meter) there are 3 wires (or three labeled 
+ terminals):
 RED:    This is the clock signal and must be wired to an OUTPUT on the controller module.
-        Typically these require at least 5V to work, so if you're running 3.3V outputs (e.g. Raspberry Pi), you'll
-        need an opto-isolator or transistor to bump it up to 5V.
-GREEN:  This is the data signal and must be wired to an INPUT on the controller module.  The meter will pull this
-        low to signify a bit and it'll float otherwise, so you'll have to pull this high to work properly.
+        Typically these require at least 5V to work, so if you're running 3.3V outputs (e.g. Raspberry Pi),
+        you'll need an opto-isolator or transistor to bump it up to 5V.
+GREEN:  This is the data signal and must be wired to an INPUT on the controller module.  The meter will 
+        pull this low to signify a bit and it'll float otherwise, so you'll have to pull this high to 
+        work properly.
 BLACK:  Tie this to ground.
 
-NOTE: There are no guarantees that these wire colors correspond to your meters.  The meter's I've tested have all
-been fairly robust about putting the wrong wires to the wrong terminals, but be careful!
+NOTE: There are no guarantees that these wire colors correspond to your meters.  The meter's I've tested
+  have all been fairly robust about putting the wrong wires to the wrong terminals, but be careful!
 
 Sensus Protocol
 ---------------
-The sensus protocol sends data as 7 bits, 1 start, 1 stop, 1 parity bit.  Baud rate is controlled by toggling the 
-clock pin.  The module is currently configured to a 1000us clock cycle.  That seems to be about as fast as I can get
-and reliably read the couple different manufacturer's meters I have.  YMMV.  This is controlled by the TICK_TIME
-variable in the code (tick time is 1/2 the full cycle time, so 500us is the default)
+The sensus protocol sends data as 7 bits, 1 start, 1 stop, 1 parity bit.  Baud rate is controlled by
+toggling the clock pin.  The module is currently configured to a 1000us clock cycle.  That seems to be
+about as fast as I can get and reliably read the couple different manufacturer's meters I have.  YMMV.  
+This is controlled by the TICK_TIME variable in the code (tick time is 1/2 the full cycle time, so 500us 
+is the default)
 
 The data is ASCII encoded in the following format:
 V;RBxxxxxxx;IByyyyy;Kmmmmm
@@ -35,12 +38,12 @@ The line is terminated with a carriage return and then repeated.
 
 Water Read Precision
 --------------------
-The precision of the water read value is typically something that can be programmed into the meter itself.  Most meters
-come factory programmed to only give values in terms of 10s or even 100s of gallons or liters.  Therefore, the meter read
-value will only give you the most significant digits of the meter dials.  To give full precision (even down to the tenth of
-a gallon if so equipped) you need specialized hardware.  For example, for Sensus branded meters you need the FieldLogic Hub
-software package and the TouchRead autogun.  I would LOVE to be able to reprogram Sensus compatible meters to give full 
-resolution, but I don't have any documentation as to how to do that.  If anyone out there does please send it to me!
+The precision of the water read value is typically something that can be programmed into the meter itself.
+Most meters come factory programmed to only give values in terms of 10s or even 100s of gallons or liters.
+Therefore, the meter read value will only give you the most significant digits of the meter dials.  To give
+full precision (even down to the tenth of a gallon if so equipped) you need specialized hardware.  For 
+example, for Sensus branded meters you need the FieldLogic Hub software package and the TouchRead autogun.
+I would LOVE to be able to reprogram Sensus compatible meters to give full resolution, but I don't have any documentation as to how to do that.  If anyone out there does please send it to me!
 
 Building
 --------
@@ -50,14 +53,14 @@ e.g. on Raspberry-pi it's easy.  Just run
 
 to build, cd to the directory and make
 
-to install the module use the insmod command.  The module won't do anything without some parameters passed to it
-To get info on the parameters, type:
+to install the module use the insmod command.  The module won't do anything without some parameters 
+passed to it.  To get info on the parameters, type:
     modinfo kmeter.ko
 
 So, for example:
   sudo insmod kmeter.ko debug=0 dataPin=27,22 clockPin=17,17
-This will fire off the module and read data from two separate meters that are sharing a clock pin.  debug is set 
-   to 0 so there won't be a lot of chatter.
+This will fire off the module and read data from two separate meters that are sharing a clock pin.  
+   debug is set to 0 so there won't be a lot of chatter.
 If you want to debug, set debug to true and monitor the kernel log file (e.g. tail -f /var/log/kern.log)
 
 Reading Data
@@ -66,7 +69,7 @@ When this module runs, it creates a sysfs at /sys/kMeter.  This filesystem is de
 /sys/kMeter/poll_interval (the rate at which we poll the meter in seconds)
 The next section has per meter variables.  Replace the # with a meter number
 /sys/kMeter/#/clockPin - the gpio pin assigned to the clock. (typically the red wire. 5V logic only)
-/sys/kMeter/#/dataPin - the gpio pin assigned to the data input. (typically the green wire (must pull this high))
+/sys/kMeter/#/dataPin - the gpio pin assigned to the data input.(typically the green wire (must pull high))
 /sys/kMeter/#/value - the meter read value
 /sys/kMeter/#/number - the meter number (if supplied.  If not this will return a -1)
 /sys/kMeter/#/k_number - the meter k_number (if supplied.  if not this will return a -1)
@@ -75,10 +78,11 @@ The next section has per meter variables.  Replace the # with a meter number
 
 Note on sharing clock pins
 --------------------------
-This is somewhat experimental.  Generally when the clock pin is set low for a second or so, the meter will reset
-its send buffer.  The module takes care of this.  If this didn't happen, the two meters would inevitably get out of 
-sync in sending data.  Generally it's a good idea to NOT share clock pins if you can avoid it.  That said, I run it 
-in a sprinkler app with a shared pin and have so for months without issue.  No guarantees here though.
+This is somewhat experimental.  Generally when the clock pin is set low for a second or so, the meter
+will reset its send buffer.  The module takes care of this.  If this didn't happen, the two meters
+would inevitably get out of sync in sending data.  Generally it's a good idea to NOT share clock 
+pins if you can avoid it.  That said, I run it in a sprinkler app with a shared pin and have so 
+for months without issue.  No guarantees here though.
 
 
  
