@@ -50,7 +50,7 @@ static struct meterspec
     s32 value;
     s32 number;
     s32 k_number;
-    time_t last_read_time;
+    struct timespec64 last_read_time;
     // config values
     int dataPin;
     int clockPin;
@@ -140,7 +140,7 @@ static ssize_t lastTime_show(struct kobject* kobj, struct kobj_attribute* attr, 
     if ((index < 0) || (index >= dataPin_argc))
         return 0;
     mutex_lock(&mspec_mutex);
-    retval = scnprintf(buf, PAGE_SIZE, "%lu", mspec[index].last_read_time);
+    retval = scnprintf(buf, PAGE_SIZE, "%lld", (long long)mspec[index].last_read_time.tv_sec);
     mutex_unlock(&mspec_mutex);
     return retval;
 }
@@ -203,7 +203,7 @@ void init_meter(int mtr_num, int dataPin, int clockPin)
     mspec[mtr_num].value = -1;
     mspec[mtr_num].number = -1;
     mspec[mtr_num].k_number = -1;
-    mspec[mtr_num].last_read_time = 0;
+    mspec[mtr_num].last_read_time.tv_sec = 0;
 
     mspec[mtr_num].clockPin = clockPin;
     mspec[mtr_num].dataPin = dataPin;
@@ -219,9 +219,7 @@ void free_meter(int mtr_num)
         return;
     if (mspec[mtr_num].kobj)
         kobject_put(mspec[mtr_num].kobj);
-    gpio_unexport(mspec[mtr_num].dataPin);
     gpio_free(mspec[mtr_num].dataPin);
-    gpio_unexport(mspec[mtr_num].clockPin);
     gpio_free(mspec[mtr_num].clockPin);
 }
 
@@ -230,7 +228,6 @@ static struct task_struct *task;             // The pointer to the thread task
 static int mainTask(void* data);
 
 static int __init kMeter_init(void){
-    enum dat_pin_val {NOT_ASSIGNED = 0, ASSIGNED_DATA, ASSIGNED_CLOCK} pinval[100] ={0};
     int result = 0;
     int i;
     char counterNum[4];
@@ -255,8 +252,8 @@ static int __init kMeter_init(void){
     {
         if (debug)
             printk(KERN_INFO "kMeter: Meter %d Data %d Clock %d\n", i, dataPin[i], clockPin[i]);
-        if ((!gpio_is_valid(dataPin[i])) || (dataPin[i] < 0) || (dataPin[i] >= 100) 
-            || (!gpio_is_valid(clockPin[i])) || (clockPin[i] < 0) || (clockPin[i] >= 100))
+        if ((!gpio_is_valid(dataPin[i])) || (dataPin[i] < 100) || (dataPin[i] >= 1000) 
+            || (!gpio_is_valid(clockPin[i])) || (clockPin[i] < 100) || (clockPin[i] >= 1000))
         {
             printk(KERN_ALERT "kMeter: Illegal Pin Config Meter %d\n", i);
             for(i--; i>=0;i--)
@@ -264,28 +261,11 @@ static int __init kMeter_init(void){
             kobject_put(sysfs_kobj);  // remove sysfs entry
             return -EINVAL;
         }
-        if (pinval[dataPin[i]] != NOT_ASSIGNED)
-        {
-            printk(KERN_ALERT "kMeter: Duplicate Data Pin %d in Meter %d\n", dataPin[i], i);
-            for(i--; i>=0;i--)
-                free_meter(i);
-            kobject_put(sysfs_kobj);  // remove sysfs entry
-            return -EINVAL;
-        }
-        pinval[dataPin[i]] = ASSIGNED_DATA;
-        if (pinval[clockPin[i]] == ASSIGNED_DATA)
-        {
-            printk(KERN_ALERT "kMeter: Clock Pin Assigned to Data Pin %d in Meter %d\n", clockPin[i], i);
-            for(i--; i>=0;i--)
-                free_meter(i);
-            kobject_put(sysfs_kobj);  // remove sysfs entry
-            return -EINVAL;
-        }
-        else
-            pinval[clockPin[i]] = ASSIGNED_CLOCK;
+        // TODO: Check for duplication in assignment of pins (e.g. accidentally using the same pin numer
+        //  for both data and clock.
 
         init_meter(i, dataPin[i], clockPin[i]);
-
+ 
         sprintf(counterNum, "%d", i);
         mspec[i].kobj = kobject_create_and_add(counterNum, sysfs_kobj);
         if (!mspec[i].kobj)
@@ -296,6 +276,7 @@ static int __init kMeter_init(void){
             kobject_put(sysfs_kobj);                          // clean up -- remove the kobject sysfs entry
             return -EINVAL;
         }
+ 
         // add the attributes to the counter
         result = sysfs_create_group(mspec[i].kobj, &sysfs_group);
         if(result) {
@@ -305,13 +286,22 @@ static int __init kMeter_init(void){
             kobject_put(sysfs_kobj);                          // clean up -- remove the kobject sysfs entry
             return result;
         }
-        gpio_request(mspec[i].dataPin, "dataPin");       // Set up the dataPin
+ 
+        result = gpio_request(mspec[i].dataPin, "dataPin");       // Set up the dataPin
+        if (result) {
+            printk(KERN_ERR "Failed to request GPIO %d\n", mspec[i].dataPin);
+            return result;
+        }
         gpio_direction_input(mspec[i].dataPin);        // Set the dataPin to be an input
-        gpio_export(mspec[i].dataPin, true);          // Causes dataPin to appear in /sys/class/gpio
-        gpio_request(mspec[i].clockPin, "clockPin");       // Set up the clockPin
+                                                     
+        result = gpio_request(mspec[i].clockPin, "clockPin");       // Set up the clockPin
+        if (result) {
+            printk(KERN_ERR "Failed to request GPIO %d\n", mspec[i].clockPin);
+            return result;
+        }
         gpio_direction_output(mspec[i].clockPin, 0);        // Set the clockPin to be an output
-        gpio_export(mspec[i].clockPin, true);          // Causes clockPin to appear in /sys/class/gpio
     }
+ 
     task = kthread_run(mainTask, NULL, "kMeter_thread");
     return result;
 }
@@ -342,7 +332,7 @@ void parse_data(struct meterspec* p)
     //  mmmm is another meter id (arbitrary digits)
     //  Note that the IB and K parts are optional
 
-    struct timespec ts;
+    struct timespec64 ts;
     enum STATE {PARSE_V, PARSE_SEMI, PARSE_PRE, PARSE_NUM} state = PARSE_V;
     char* data_ptr = p->data;
     // temp storage for variables until we've parsed the whole string.
@@ -399,8 +389,8 @@ void parse_data(struct meterspec* p)
     p->value = value;
     p->number = number;
     p->k_number = k_number;
-    getnstimeofday(&ts);
-    p->last_read_time = ts.tv_sec;
+    ktime_get_real_ts64(&ts);
+    p->last_read_time = ts;
     mutex_unlock(&mspec_mutex);
     if (debug)
         printk(KERN_INFO "kMeter:%d,%d,%d\n", p->value, p->number, p->k_number);
@@ -521,7 +511,7 @@ static int mainTask(void* data)
 {
     unsigned long jiffies_timeout;
     bool allDone;
-    allow_signal(SIGKILL);
+    set_current_state(TASK_INTERRUPTIBLE);
     //set_current_state(TASK_INTERRUPTIBLE);
     while (!kthread_should_stop())
     {

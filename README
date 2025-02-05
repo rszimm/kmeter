@@ -63,6 +63,13 @@ This will fire off the module and read data from two separate meters that are sh
    debug is set to 0 so there won't be a lot of chatter.
 If you want to debug, set debug to true and monitor the kernel log file (e.g. tail -f /var/log/kern.log)
 
+NOTE: PIN NUMBERS ON MODERN KERNELS
+-----------------------------------
+In the old days, the insmod statement above worked fine on raspberrypi, but modern kernels now
+have mapped the GPIO values into new number spaces.  Execute this to get the new gpio number:
+cat /sys/kernel/debug/gpio
+It will probably be in the 500-800 space.
+
 Reading Data
 ------------
 When this module runs, it creates a sysfs at /sys/kMeter.  This filesystem is described below
